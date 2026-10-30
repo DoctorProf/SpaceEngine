@@ -1,6 +1,8 @@
 import { GameCanvas } from "./GameCanvas";
 import { HUD } from "./ui/components/HUD";
 import { TimeControls } from "./ui/components/TimeControls";
+import { InfoPanel } from "./ui/components/InfoPanel";
+import { TransferPanel } from "./ui/components/TransferPanel";
 
 export default function App() {
   return (
@@ -14,6 +16,8 @@ export default function App() {
     >
       <GameCanvas />
       <HUD />
+      <InfoPanel />
+      <TransferPanel />
       <TimeControls />
     </div>
   );

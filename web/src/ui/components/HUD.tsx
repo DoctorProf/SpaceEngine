@@ -46,10 +46,10 @@ export function HUD() {
         {selected ? `▸ ${selected}` : "▸ нет выбора"}
       </div>
       <div style={{ color: "#445", marginTop: 8, fontSize: 12 }}>
-        ЛКМ — выбор · ПКМ — панорама · колесо — зум
+        ЛКМ — выбор · 2×ЛКМ — фокус · ПКМ — панорама
       </div>
       <div style={{ color: "#445", fontSize: 12 }}>
-        R — сброс · F — вся система
+        колесо — зум · R — сброс · F — вся система
       </div>
     </div>
   );
