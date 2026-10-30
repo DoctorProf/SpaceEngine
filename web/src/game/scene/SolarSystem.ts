@@ -6,36 +6,37 @@ import {
 } from "../physics/Orbit";
 import { SOLAR_SYSTEM, type BodyData, SUN_MU } from "../data/bodies";
 import {
-  orbitKmPerUnit, bodyRadiusUnits,
+  KM_PER_UNIT, bodyRadiusUnits,
   soiRadiusPlanetKm, soiRadiusMoonKm,
 } from "../physics/Scales";
 import { useGameStore, type BodyInfo } from "../../state/gameStore";
-import { polarFromXY } from "../physics/Transfer";
+import { polarFromXY, getOriginPlanetName } from "../physics/Transfer";
 
 const ORBIT_MIN_PX = 15;
-const SPRITE_MIN_PX = 0.3;
+const MIN_RENDER_PX = 1.5;
 const ARC_TARGET_PX = 1.5;
+const SOI_MIN_PX = 3;
+const SOI_MIN_PX_SELECTED = 6;
 
 interface OrbitRecord {
   graphics: Graphics;
   orbit: Orbit;
-  kmPerUnit: number;
 }
 
 function drawOrbitRing(
-  g: Graphics, orbit: Orbit, kmPerUnit: number,
+  g: Graphics, orbit: Orbit,
   strokeWidth: number, color: number, zoom: number,
 ) {
   const period = orbitalPeriod(orbit);
-  const aUnits = orbit.a / kmPerUnit;
-  const circumferencePx = 2 * Math.PI * aUnits * zoom;
+  const circumferencePx = 2 * Math.PI * (orbit.a / KM_PER_UNIT) * zoom;
   const steps = Math.max(128, Math.min(4096, Math.ceil(circumferencePx / 2)));
+
   g.clear();
   for (let i = 0; i <= steps; i++) {
     const t = (i / steps) * period;
     const p = positionAt(orbit, t);
-    const x = p.x / kmPerUnit;
-    const y = p.y / kmPerUnit;
+    const x = p.x / KM_PER_UNIT;
+    const y = p.y / KM_PER_UNIT;
     if (i === 0) g.moveTo(x, y);
     else g.lineTo(x, y);
   }
@@ -46,10 +47,11 @@ function drawDashedCircle(
   g: Graphics, rUnits: number, strokeWidth: number, color: number, zoom: number,
 ) {
   const rPx = rUnits * zoom;
-  if (rPx < 3) { g.clear(); return; }
+  if (rPx < 2) { g.clear(); return; }
   const circumferencePx = 2 * Math.PI * rPx;
-  const steps = Math.max(64, Math.min(512, Math.ceil(circumferencePx / 6)));
+  const steps = Math.max(64, Math.min(1024, Math.ceil(circumferencePx / 6)));
   const dashOn = 3;
+
   g.clear();
   let drawing = false;
   for (let i = 0; i <= steps; i++) {
@@ -75,18 +77,16 @@ export class Body {
   readonly radiusUnits: number;
   readonly sprite: Sprite | Graphics;
   readonly orbitRecord?: OrbitRecord;
-  readonly soiGfx: Graphics;          // ← new
-  soiRadiusKm = 0;                    // ← new
+  readonly soiGfx: Graphics;
+  soiRadiusKm = 0;
 
   private readonly orbit?: Orbit;
-  private readonly kmPerUnit: number;
   private spriteSegments = 0;
 
   constructor(data: BodyData, textures: Map<string, Texture>, parent?: Body) {
     this.data = data;
     this.parent = parent;
-    this.kmPerUnit = parent ? orbitKmPerUnit(parent.data.name) : 1;
-    this.radiusUnits = bodyRadiusUnits(data.radiusKm, data.name);
+    this.radiusUnits = bodyRadiusUnits(data.radiusKm);
 
     this.container.addChild(this.childrenLayer);
 
@@ -94,16 +94,12 @@ export class Body {
     if (tex) {
       const sp = new Sprite(tex);
       sp.anchor.set(0.5);
-      sp.width = this.radiusUnits * 2;
-      sp.height = this.radiusUnits * 2;
       this.sprite = sp;
     } else {
       this.sprite = new Graphics();
-      this.redrawSprite(1);
     }
     this.container.addChild(this.sprite);
 
-    // SOI-круг — под спрайтом, поверх орбиты
     this.soiGfx = new Graphics();
     this.soiGfx.visible = false;
     this.container.addChildAt(this.soiGfx, 0);
@@ -126,13 +122,10 @@ export class Body {
       this.orbit = { a: o.aKm, e: o.e, omega, M0, mu: data.parentMu };
 
       const ring = new Graphics();
-      drawOrbitRing(ring, this.orbit, this.kmPerUnit, 1, 0x335577, 1);
+      drawOrbitRing(ring, this.orbit, 1, 0x335577, 1);
       parent.childrenLayer.addChildAt(ring, 0);
-      this.orbitRecord = {
-        graphics: ring, orbit: this.orbit, kmPerUnit: this.kmPerUnit,
-      };
+      this.orbitRecord = { graphics: ring, orbit: this.orbit };
 
-      // SOI для планеты (родитель — Солнце) или для луны (родитель — планета)
       if (parent.data.name === "Sun") {
         this.soiRadiusKm = soiRadiusPlanetKm(o.aKm, data.massKg);
       } else {
@@ -143,24 +136,36 @@ export class Body {
       parent.children.push(this);
     }
 
+    // Стартовая инициализация размера
+    this.updateSizeForZoom(1);
     for (const child of data.children ?? []) {
       new Body(child, textures, this);
     }
   }
 
-  redrawSprite(zoom: number) {
-    const g = this.sprite;
-    if (!(g instanceof Graphics)) return;
-    const radiusPx = this.radiusUnits * zoom;
-    if (radiusPx < 1) return;
-    const segments = Math.max(24, Math.min(1024,
-      Math.ceil((Math.PI * 2 * radiusPx) / ARC_TARGET_PX)));
+  updateSizeForZoom(zoom: number) {
+    const minUnits = MIN_RENDER_PX / zoom;
+    const displayR = Math.max(this.radiusUnits, minUnits);
+
+    if (this.sprite instanceof Sprite) {
+      this.sprite.width = displayR * 2;
+      this.sprite.height = displayR * 2;
+    } else {
+      this.redrawCircle(displayR);
+    }
+  }
+
+  private redrawCircle(displayR: number) {
+    const g = this.sprite as Graphics;
+    const radiusPx = displayR * 1000;
+    const segments = Math.max(24, Math.min(256,
+      Math.ceil((Math.PI * 2 * Math.min(radiusPx, 100)) / ARC_TARGET_PX)));
     if (segments === this.spriteSegments) return;
     g.clear();
     for (let i = 0; i < segments; i++) {
       const a = (i / segments) * Math.PI * 2;
-      const x = Math.cos(a) * this.radiusUnits;
-      const y = Math.sin(a) * this.radiusUnits;
+      const x = Math.cos(a) * displayR;
+      const y = Math.sin(a) * displayR;
       if (i === 0) g.moveTo(x, y);
       else g.lineTo(x, y);
     }
@@ -187,8 +192,8 @@ export class Body {
   update(simTime: number) {
     if (this.orbit) {
       const p = positionAt(this.orbit, simTime);
-      this.container.x = p.x / this.kmPerUnit;
-      this.container.y = p.y / this.kmPerUnit;
+      this.container.x = p.x / KM_PER_UNIT;
+      this.container.y = p.y / KM_PER_UNIT;
     }
     for (const child of this.children) child.update(simTime);
   }
@@ -201,44 +206,56 @@ export class Body {
   }
 
   updateSelection(selectedName: string | null) {
-    const showChildren = this.parent === undefined || this.hasInSubtree(selectedName);
+    const showChildren =
+      this.parent === undefined || this.hasInSubtree(selectedName);
     this.childrenLayer.visible = showChildren;
     for (const child of this.children) child.updateSelection(selectedName);
   }
 
   updateVisibility(zoom: number) {
     if (this.parent) {
-      const radiusPx = this.radiusUnits * zoom;
       const parentLayerVisible = this.parent.childrenLayer.visible;
-      const spriteVisible = parentLayerVisible && radiusPx >= SPRITE_MIN_PX;
-      this.sprite.visible = spriteVisible;
+      this.sprite.visible = parentLayerVisible;
 
       if (this.orbitRecord && this.orbit) {
-        const orbitUnits = this.orbit.a / this.kmPerUnit;
-        const orbitPx = orbitUnits * zoom;
-        const orbitVisible = parentLayerVisible && orbitPx >= ORBIT_MIN_PX && spriteVisible;
-        this.orbitRecord.graphics.visible = orbitVisible;
+        const orbitPx = (this.orbit.a / KM_PER_UNIT) * zoom;
+        this.orbitRecord.graphics.visible =
+          parentLayerVisible && orbitPx >= ORBIT_MIN_PX;
       }
     }
     for (const c of this.children) c.updateVisibility(zoom);
   }
 
-  updateSOI(show: boolean, zoom: number) {
-    if (!show || this.soiRadiusKm === 0 || !this.parent) {
+  updateSOI(show: boolean, zoom: number, selectedName: string | null) {
+    const isPlanet = this.parent?.data.name === "Sun";
+    const hasSOI = this.soiRadiusKm > 0 && isPlanet;
+
+    if (!show || !hasSOI) {
       this.soiGfx.visible = false;
-      for (const c of this.children) c.updateSOI(show, zoom);
+      for (const c of this.children) c.updateSOI(show, zoom, selectedName);
       return;
     }
-    const rUnits = this.soiRadiusKm / this.kmPerUnit;
+
+    const rUnits = this.soiRadiusKm / KM_PER_UNIT;
     const rPx = rUnits * zoom;
-    if (rPx < 5) {
+    const isSelected = this.data.name === selectedName;
+
+    if (rPx < SOI_MIN_PX && !isSelected) {
       this.soiGfx.visible = false;
-      for (const c of this.children) c.updateSOI(show, zoom);
+      for (const c of this.children) c.updateSOI(show, zoom, selectedName);
       return;
     }
+
+    const displayR = isSelected
+      ? Math.max(rUnits, SOI_MIN_PX_SELECTED / zoom)
+      : rUnits;
+
     this.soiGfx.visible = true;
-    drawDashedCircle(this.soiGfx, rUnits, 1 / zoom, 0x556688, zoom);
-    for (const c of this.children) c.updateSOI(show, zoom);
+    const color = isSelected ? 0x00ffcc : 0x556688;
+    const thickness = isSelected ? 2 / zoom : 1 / zoom;
+    drawDashedCircle(this.soiGfx, displayR, thickness, color, zoom);
+
+    for (const c of this.children) c.updateSOI(show, zoom, selectedName);
   }
 
   getInfo(simTime: number): BodyInfo {
@@ -263,12 +280,12 @@ export class Body {
     return info;
   }
 
-  /** Полярные координаты относительно родителя — нужны для Hohmann. */
   getPolarFromParent(): { rKm: number; angle: number } | null {
     if (!this.parent || !this.orbit) return null;
-    const xKm = this.container.x * this.kmPerUnit;
-    const yKm = this.container.y * this.kmPerUnit;
-    return polarFromXY(xKm, yKm);
+    return polarFromXY(
+      this.container.x * KM_PER_UNIT,
+      this.container.y * KM_PER_UNIT,
+    );
   }
 }
 
@@ -277,8 +294,8 @@ export class SolarSystem {
   readonly root: Body;
   private readonly allBodies: Body[] = [];
   private readonly highlight: Graphics;
-  private readonly transferGfx: Graphics;   // ← new
-  private currentZoom = 1;
+  private readonly transferGfx: Graphics;
+  private currentZoom = 0.25;
   private currentSelected: string | null = null;
   private currentTransferTarget: string | null = null;
   private currentShowSOI = false;
@@ -299,7 +316,6 @@ export class SolarSystem {
         this.setZoom(state.zoom);
       }
       if (state.selectedBody !== this.currentSelected) {
-        this.currentSelected = state.selectedBody;
         this.setSelected(state.selectedBody);
       }
       if (state.transferTarget !== this.currentTransferTarget) {
@@ -307,7 +323,7 @@ export class SolarSystem {
       }
       if (state.showSOI !== this.currentShowSOI) {
         this.currentShowSOI = state.showSOI;
-        this.root.updateSOI(this.currentShowSOI, this.currentZoom);
+        this.root.updateSOI(this.currentShowSOI, this.currentZoom, this.currentSelected);
       }
     });
 
@@ -322,21 +338,24 @@ export class SolarSystem {
   setZoom(zoom: number) {
     this.currentZoom = zoom;
     const w = 1 / zoom;
+
     for (const b of this.allBodies) {
-      b.redrawSprite(zoom);
+      b.updateSizeForZoom(zoom);
       if (b.orbitRecord) {
-        drawOrbitRing(b.orbitRecord.graphics, b.orbitRecord.orbit,
-          b.orbitRecord.kmPerUnit, w, 0x335577, zoom);
+        drawOrbitRing(b.orbitRecord.graphics, b.orbitRecord.orbit, w, 0x335577, zoom);
       }
     }
+
     this.root.updateVisibility(zoom);
-    this.root.updateSOI(this.currentShowSOI, zoom);
+    this.root.updateSOI(this.currentShowSOI, zoom, this.currentSelected);
     if (this.currentSelected) this.updateHighlight(this.currentSelected);
   }
 
   setSelected(name: string | null) {
+    this.currentSelected = name;
     this.root.updateSelection(name);
     this.updateHighlight(name);
+    this.root.updateSOI(this.currentShowSOI, this.currentZoom, name);
     if (!name) useGameStore.setState({ selectedInfo: null });
   }
 
@@ -349,41 +368,39 @@ export class SolarSystem {
     return this.allBodies.find((b) => b.data.name === name);
   }
 
-  /** Отрисовка Hohmann-эллипса к цели (если задан transferTarget). */
   private drawTransferPreview() {
     this.transferGfx.clear();
     const target = this.currentTransferTarget;
     if (!target) return;
 
-    const earth = this.getBody("Earth");
-    const dest = this.getBody(target);
-    if (!earth || !dest || !earth.orbit || !dest.orbit) return;
-    if (earth.parent?.data.name !== "Sun" || dest.parent?.data.name !== "Sun") return;
+    const originName = getOriginPlanetName(useGameStore.getState().selectedBody);
+    if (originName === target) return;
 
-    const r1 = earth.orbit.a;   // Земля (старт)
-    const r2 = dest.orbit.a;    // цель
+    const origin = this.getBody(originName);
+    const dest = this.getBody(target);
+    if (!origin || !dest || !origin.orbit || !dest.orbit) return;
+    if (origin.parent?.data.name !== "Sun" || dest.parent?.data.name !== "Sun") return;
+
+    const r1 = origin.orbit.a;
+    const r2 = dest.orbit.a;
     const aT = (r1 + r2) / 2;
     const eT = Math.abs(r2 - r1) / (r2 + r1);
 
-    const earthPos = earth.getPolarFromParent();
-    if (!earthPos) return;
+    const originPos = origin.getPolarFromParent();
+    if (!originPos) return;
 
     const outbound = r2 > r1;
-    const omega = outbound ? earthPos.angle : earthPos.angle + Math.PI;
+    const omega = outbound ? originPos.angle : originPos.angle + Math.PI;
     const M0 = outbound ? 0 : Math.PI;
+    const transferOrbit: Orbit = { a: aT, e: eT, omega, M0, mu: SUN_MU };
 
-    const transferOrbit: Orbit = {
-      a: aT, e: eT, omega, M0, mu: SUN_MU,
-    };
-
-    const kmPerUnit = orbitKmPerUnit("Sun");
     const period = orbitalPeriod(transferOrbit);
     const steps = 360;
     for (let i = 0; i <= steps; i++) {
       const t = (i / steps) * period;
       const p = positionAt(transferOrbit, t);
-      const x = p.x / kmPerUnit;
-      const y = p.y / kmPerUnit;
+      const x = p.x / KM_PER_UNIT;
+      const y = p.y / KM_PER_UNIT;
       if (i === 0) this.transferGfx.moveTo(x, y);
       else this.transferGfx.lineTo(x, y);
     }
@@ -397,8 +414,12 @@ export class SolarSystem {
     if (!body) return;
     const p = body.getWorldPos();
     const minWorld = 4 / this.currentZoom;
-    const ringR = Math.max(body.radiusUnits * 2.5, minWorld);
-    this.highlight.circle(p.x, p.y, ringR)
+    const ringR = Math.max(
+      Math.max(body.radiusUnits, MIN_RENDER_PX / this.currentZoom) * 1.5,
+      minWorld,
+    );
+    this.highlight
+      .circle(p.x, p.y, ringR)
       .stroke({ width: 1 / this.currentZoom, color: 0x00ffcc });
   }
 

@@ -2,9 +2,14 @@ import type { Container } from "pixi.js";
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from "../render/PixelApp";
 import { useGameStore } from "../../state/gameStore";
 
-const ZOOM_LEVELS = [0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
-const INITIAL_INDEX = 3;
-const FIT_ALL_INDEX = 0;
+const ZOOM_LEVELS = [
+  1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2,
+  1, 2, 4, 8, 16, 32, 64, 128,
+  256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+  65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
+];
+const INITIAL_INDEX = 3;    // zoom = 1/4 — 4 внутренние планеты
+const FIT_ALL_INDEX = 0;    // zoom = 1/32 — вся система
 
 export class Camera {
   private readonly world: Container;
@@ -76,8 +81,6 @@ export class Camera {
       (e) => {
         e.preventDefault();
         const dir = e.deltaY < 0 ? 1 : -1;
-
-        // Если следуем за телом — зум вокруг него, фокус сохраняется.
         if (this.followName) {
           this.setZoomIndex(this.zoomIndex + dir);
         } else {
@@ -131,7 +134,7 @@ export class Camera {
     });
   }
 
-  private setZoomIndex(newIndex: number) {
+  setZoomIndex(newIndex: number) {
     const clamped = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, newIndex));
     if (clamped === this.zoomIndex) return;
     this.zoomIndex = clamped;

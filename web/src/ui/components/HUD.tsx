@@ -24,19 +24,19 @@ export function HUD() {
   const selected = useGameStore((s) => s.selectedBody);
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        top: 16,
-        left: 16,
-        color: "#9ab",
-        fontFamily: "monospace",
-        fontSize: 14,
-        userSelect: "none",
-        pointerEvents: "none",
-        lineHeight: 1.5,
-      }}
-    >
+      <div
+        style={{
+          position: "absolute",
+          top: 52,                   // ← было 16
+          left: 16,
+          color: "#9ab",
+          fontFamily: "monospace",
+          fontSize: 14,
+          userSelect: "none",
+          pointerEvents: "none",
+          lineHeight: 1.5,
+    }}
+  >
       <div style={{ color: paused ? "#ff6644" : "#5a8fff", fontWeight: "bold" }}>
         {paused ? "PAUSED" : `RUNNING ×${speed}`}
       </div>

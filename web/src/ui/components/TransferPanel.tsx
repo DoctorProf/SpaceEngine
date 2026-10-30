@@ -1,53 +1,62 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGameStore } from "../../state/gameStore";
 import {
   computeHohmann,
+  currentPhaseRad,
   formatDuration,
-  AU_KM,
+  getOriginPlanetName,
 } from "../../game/physics/Transfer";
 import { SOLAR_SYSTEM } from "../../game/data/bodies";
+import { computeM0FromEphemeris, deg2rad } from "../../game/physics/Orbit";
 
 const RAD2DEG = 180 / Math.PI;
+const REFRESH_MS = 500;
 
 interface TargetRow {
   name: string;
-  dv1: number;
-  dv2: number;
   dvTotal: number;
   transferTimeSec: number;
-  currentPhaseDeg: number;
-  targetPhaseDeg: number;
   secondsUntilWindow: number;
 }
 
-function computeAllTargets(): TargetRow[] {
-  const earth = SOLAR_SYSTEM.children?.find((c) => c.name === "Earth");
-  if (!earth?.orbit) return [];
+function computeAllTargets(originName: string, simTime: number): TargetRow[] {
+  const origin = SOLAR_SYSTEM.children?.find((c) => c.name === originName);
+  if (!origin?.orbit || origin.orbit.meanLongitudeDeg === undefined) return [];
 
-  const r1 = earth.orbit.aKm;
-  const T1 = earth.orbit.periodDays! * 86400;
+  const r1 = origin.orbit.aKm;
+  const T1 = origin.orbit.periodDays! * 86400;
+  const oM0 = computeM0FromEphemeris({
+    meanLongitudeDeg: origin.orbit.meanLongitudeDeg,
+    periLongitudeDeg: origin.orbit.periLongitudeDeg!,
+    periodDays: origin.orbit.periodDays!,
+  });
+  const oOmega = deg2rad(origin.orbit.periLongitudeDeg!);
 
   const rows: TargetRow[] = [];
   for (const p of SOLAR_SYSTEM.children ?? []) {
-    if (!p.orbit || p.name === "Earth" || p.name === "Sun") continue;
+    if (!p.orbit || p.name === originName || p.name === "Sun") continue;
+    if (p.orbit.meanLongitudeDeg === undefined) continue;
+
     const r2 = p.orbit.aKm;
     const T2 = p.orbit.periodDays! * 86400;
+    const pM0 = computeM0FromEphemeris({
+      meanLongitudeDeg: p.orbit.meanLongitudeDeg,
+      periLongitudeDeg: p.orbit.periLongitudeDeg!,
+      periodDays: p.orbit.periodDays!,
+    });
+    const pOmega = deg2rad(p.orbit.periLongitudeDeg!);
 
-    // Текущие углы нам неизвестны без simTime — приблизим M0, но
-    // для таблицы достаточно «фазовый угол сейчас» через эфемериды:
-    // в нашем случае — считаем фазу на момент 0, что совпадает с реальным «сейчас».
-    const angleFrom = 0;
-    const angleTo = 0;
+    const phase = currentPhaseRad(
+      r1, origin.orbit.e, oM0, oOmega,
+      r2, p.orbit.e, pM0, pOmega,
+      simTime,
+    );
+    const res = computeHohmann(r1, r2, phase, T1, T2);
 
-    const res = computeHohmann(r1, r2, angleFrom, angleTo, T1, T2);
     rows.push({
       name: p.name,
-      dv1: res.dv1,
-      dv2: res.dv2,
       dvTotal: res.dvTotal,
       transferTimeSec: res.transferTimeSec,
-      currentPhaseDeg: res.currentPhaseAngle * RAD2DEG,
-      targetPhaseDeg: res.targetPhaseAngle * RAD2DEG,
       secondsUntilWindow: res.secondsUntilWindow,
     });
   }
@@ -55,24 +64,39 @@ function computeAllTargets(): TargetRow[] {
 }
 
 export function TransferPanel() {
+  const selectedBody = useGameStore((s) => s.selectedBody);
   const transferTarget = useGameStore((s) => s.transferTarget);
   const setTransferTarget = useGameStore((s) => s.setTransferTarget);
   const showSOI = useGameStore((s) => s.showSOI);
   const toggleSOI = useGameStore((s) => s.toggleSOI);
 
-  const rows = useMemo(() => computeAllTargets(), []);
+  const originName = getOriginPlanetName(selectedBody);
+
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  const rows = useMemo(
+    () => computeAllTargets(originName, useGameStore.getState().simTime),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [originName, useGameStore.getState().simTime],
+  );
 
   return (
     <div style={panelStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <span style={{ color: "#00ffcc", fontWeight: "bold" }}>Перелёты с Земли</span>
+        <span style={{ color: "#00ffcc", fontWeight: "bold" }}>
+          Перелёты с {originName}
+        </span>
         <button onClick={toggleSOI} style={toggleBtn(showSOI)}>
           SOI {showSOI ? "on" : "off"}
         </button>
       </div>
 
       <div style={{ fontSize: 11, color: "#667", marginBottom: 6 }}>
-        Δv — с низкой орбиты Земли (Hohmann). Клик — preview.
+        Δv — Hohmann. Старт с планеты, выбранной/родительской.
       </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -88,9 +112,7 @@ export function TransferPanel() {
           {rows.map((r) => (
             <tr
               key={r.name}
-              onClick={() =>
-                setTransferTarget(transferTarget === r.name ? null : r.name)
-              }
+              onClick={() => setTransferTarget(transferTarget === r.name ? null : r.name)}
               style={{
                 cursor: "pointer",
                 background: transferTarget === r.name ? "rgba(255,170,51,0.15)" : "transparent",
@@ -105,28 +127,17 @@ export function TransferPanel() {
           ))}
         </tbody>
       </table>
-
-      <div style={{ marginTop: 8, fontSize: 11, color: "#556" }}>
-        Пример: {rows[0]?.name} — {rows[0]?.dvTotal.toFixed(2)} км/с
-      </div>
     </div>
   );
 }
 
 const panelStyle: React.CSSProperties = {
-  position: "absolute",
-  right: 16,
-  bottom: 16,
-  width: 320,
+  position: "absolute", right: 16, bottom: 16, width: 340,
   padding: "12px 14px",
   background: "rgba(10, 10, 30, 0.85)",
   border: "1px solid #2a3a5c",
-  color: "#9ab",
-  fontFamily: "monospace",
-  fontSize: 12,
-  userSelect: "none",
+  color: "#9ab", fontFamily: "monospace", fontSize: 12, userSelect: "none",
 };
-
 const th: React.CSSProperties = {
   textAlign: "left", fontWeight: "normal", paddingBottom: 4,
   borderBottom: "1px solid #2a3a5c",
@@ -134,13 +145,9 @@ const th: React.CSSProperties = {
 const thR: React.CSSProperties = { ...th, textAlign: "right" };
 const td: React.CSSProperties = { padding: "2px 0" };
 const tdR: React.CSSProperties = { ...td, textAlign: "right" };
-
 const toggleBtn = (active: boolean): React.CSSProperties => ({
   background: active ? "#3a5fff" : "#1a1a2e",
-  color: "#fff",
-  border: "1px solid #3a5fff",
-  padding: "2px 6px",
-  fontFamily: "monospace",
-  fontSize: 11,
-  cursor: "pointer",
+  color: "#fff", border: "1px solid #3a5fff",
+  padding: "2px 6px", fontFamily: "monospace",
+  fontSize: 11, cursor: "pointer",
 });

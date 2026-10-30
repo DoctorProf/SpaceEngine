@@ -110,7 +110,7 @@ function Row({ label, value, highlight }: { label: string; value: string; highli
 
 const panelStyle: React.CSSProperties = {
   position: "absolute",
-  top: 16,
+  top: 52,                     // ← было 16, теперь под TopBar (36 + 16)
   right: 16,
   width: 340,
   padding: "12px 16px",
