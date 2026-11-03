@@ -8,14 +8,18 @@ const ZOOM_LEVELS = [
   256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
   65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
 ];
-const INITIAL_INDEX = 3;    // zoom = 1/4 — 4 внутренние планеты
-const FIT_ALL_INDEX = 0;    // zoom = 1/32 — вся система
+
+const INITIAL_INDEX = 3;
+const FIT_ALL_INDEX = 0;
 
 export class Camera {
   private readonly world: Container;
   private zoomIndex = INITIAL_INDEX;
   private target = { x: 0, y: 0 };
   private followName: string | null = null;
+
+  // Смещение точки слежения относительно центра выбранного тела.
+  private followOffset = { x: 0, y: 0 };
 
   constructor(world: Container) {
     this.world = world;
@@ -40,36 +44,52 @@ export class Camera {
 
   focusOn(worldX: number, worldY: number, targetZoom?: number) {
     this.followName = null;
+    this.followOffset = { x: 0, y: 0 };
+
     this.target.x = worldX;
     this.target.y = worldY;
+
     if (targetZoom !== undefined) {
       const idx = ZOOM_LEVELS.indexOf(targetZoom);
       if (idx >= 0) this.zoomIndex = idx;
     }
+
     this.apply();
     this.syncStore();
   }
 
-  followOn(name: string, pos: { x: number; y: number }, targetZoom?: number) {
+  followOn(
+    name: string,
+    pos: { x: number; y: number },
+    targetZoom?: number,
+    offset: { x: number; y: number } = { x: 0, y: 0 },
+  ) {
     this.followName = name;
-    this.target.x = pos.x;
-    this.target.y = pos.y;
+    this.followOffset = { ...offset };
+
+    this.target.x = pos.x + this.followOffset.x;
+    this.target.y = pos.y + this.followOffset.y;
+
     if (targetZoom !== undefined) {
       const idx = ZOOM_LEVELS.indexOf(targetZoom);
       if (idx >= 0) this.zoomIndex = idx;
     }
+
     this.apply();
     this.syncStore();
   }
 
   clearFollow() {
     this.followName = null;
+    this.followOffset = { x: 0, y: 0 };
   }
 
   tickFollow(pos: { x: number; y: number } | null) {
     if (!this.followName || !pos) return;
-    this.target.x = pos.x;
-    this.target.y = pos.y;
+
+    this.target.x = pos.x + this.followOffset.x;
+    this.target.y = pos.y + this.followOffset.y;
+
     this.apply();
   }
 
@@ -80,13 +100,16 @@ export class Camera {
       "wheel",
       (e) => {
         e.preventDefault();
+
         const dir = e.deltaY < 0 ? 1 : -1;
+
         if (this.followName) {
           this.setZoomIndex(this.zoomIndex + dir);
         } else {
           const rect = canvas.getBoundingClientRect();
           const sx = ((e.clientX - rect.left) / rect.width) * VIRTUAL_WIDTH;
           const sy = ((e.clientY - rect.top) / rect.height) * VIRTUAL_HEIGHT;
+
           this.zoomAt(this.zoomIndex + dir, sx, sy);
         }
       },
@@ -99,6 +122,7 @@ export class Camera {
 
     canvas.addEventListener("mousedown", (e) => {
       this.clearFollow();
+
       if (e.button === 2) {
         dragging = true;
         lastX = e.clientX;
@@ -108,10 +132,16 @@ export class Camera {
 
     canvas.addEventListener("mousemove", (e) => {
       if (!dragging) return;
+
       const rect = canvas.getBoundingClientRect();
       const scaleX = VIRTUAL_WIDTH / rect.width;
       const scaleY = VIRTUAL_HEIGHT / rect.height;
-      this.pan((e.clientX - lastX) * scaleX, (e.clientY - lastY) * scaleY);
+
+      this.pan(
+        (e.clientX - lastX) * scaleX,
+        (e.clientY - lastY) * scaleY,
+      );
+
       lastX = e.clientX;
       lastY = e.clientY;
     });
@@ -119,6 +149,7 @@ export class Camera {
     const stop = () => {
       dragging = false;
     };
+
     canvas.addEventListener("mouseup", stop);
     canvas.addEventListener("mouseleave", stop);
 
@@ -127,6 +158,7 @@ export class Camera {
         this.clearFollow();
         this.reset();
       }
+
       if (e.code === "KeyF") {
         this.clearFollow();
         this.fitAll();
@@ -135,26 +167,41 @@ export class Camera {
   }
 
   setZoomIndex(newIndex: number) {
-    const clamped = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, newIndex));
+    const clamped = Math.max(
+      0,
+      Math.min(ZOOM_LEVELS.length - 1, newIndex),
+    );
+
     if (clamped === this.zoomIndex) return;
+
     this.zoomIndex = clamped;
     this.apply();
     this.syncStore();
   }
 
   private zoomAt(newIndex: number, screenX: number, screenY: number) {
-    const clamped = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, newIndex));
+    const clamped = Math.max(
+      0,
+      Math.min(ZOOM_LEVELS.length - 1, newIndex),
+    );
+
     if (clamped === this.zoomIndex) return;
 
     const oldZoom = this.zoom;
-    const wx = this.target.x + (screenX - VIRTUAL_WIDTH / 2) / oldZoom;
-    const wy = this.target.y + (screenY - VIRTUAL_HEIGHT / 2) / oldZoom;
+
+    const wx =
+      this.target.x + (screenX - VIRTUAL_WIDTH / 2) / oldZoom;
+    const wy =
+      this.target.y + (screenY - VIRTUAL_HEIGHT / 2) / oldZoom;
 
     this.zoomIndex = clamped;
+
     const newZoom = this.zoom;
 
-    this.target.x = wx - (screenX - VIRTUAL_WIDTH / 2) / newZoom;
-    this.target.y = wy - (screenY - VIRTUAL_HEIGHT / 2) / newZoom;
+    this.target.x =
+      wx - (screenX - VIRTUAL_WIDTH / 2) / newZoom;
+    this.target.y =
+      wy - (screenY - VIRTUAL_HEIGHT / 2) / newZoom;
 
     this.apply();
     this.syncStore();
@@ -184,8 +231,12 @@ export class Camera {
 
   private apply() {
     this.world.scale.set(this.zoom);
-    this.world.x = VIRTUAL_WIDTH / 2 - this.target.x * this.zoom;
-    this.world.y = VIRTUAL_HEIGHT / 2 - this.target.y * this.zoom;
+
+    this.world.x =
+      VIRTUAL_WIDTH / 2 - this.target.x * this.zoom;
+
+    this.world.y =
+      VIRTUAL_HEIGHT / 2 - this.target.y * this.zoom;
   }
 
   private syncStore() {

@@ -1,3 +1,4 @@
+
 import { Container, Graphics, Sprite, Texture } from "pixi.js";
 import {
   positionAt, speedAt, orbitalPeriod, periapsis, apoapsis,
@@ -11,6 +12,7 @@ import {
 } from "../physics/Scales";
 import { useGameStore, type BodyInfo } from "../../state/gameStore";
 import { polarFromXY, getOriginPlanetName } from "../physics/Transfer";
+import { PlanetSurface } from "./PlanetSurface";
 
 const ORBIT_MIN_PX = 15;
 const MIN_RENDER_PX = 1.5;
@@ -76,6 +78,7 @@ export class Body {
   readonly parent?: Body;
   readonly radiusUnits: number;
   readonly sprite: Sprite | Graphics;
+  readonly surface: PlanetSurface;
   readonly orbitRecord?: OrbitRecord;
   readonly soiGfx: Graphics;
   soiRadiusKm = 0;
@@ -99,6 +102,13 @@ export class Body {
       this.sprite = new Graphics();
     }
     this.container.addChild(this.sprite);
+
+    this.surface = new PlanetSurface(
+      data.name,
+      this.radiusUnits,
+      data.color,
+    );
+    this.container.addChild(this.surface.graphics);
 
     this.soiGfx = new Graphics();
     this.soiGfx.visible = false;
@@ -137,6 +147,7 @@ export class Body {
     }
 
     this.updateSizeForZoom(1);
+
     for (const child of data.children ?? []) {
       new Body(child, textures, this);
     }
@@ -145,6 +156,10 @@ export class Body {
   updateSizeForZoom(zoom: number) {
     const minUnits = MIN_RENDER_PX / zoom;
     const displayR = Math.max(this.radiusUnits, minUnits);
+
+    // Плавно переключаемся со спрайта на поверхность.
+    const blend = this.surface.updateZoom(zoom);
+    this.sprite.alpha = 1 - blend;
 
     if (this.sprite instanceof Sprite) {
       this.sprite.width = displayR * 2;
@@ -205,19 +220,17 @@ export class Body {
   }
 
   updateSelection(_selectedName: string | null) {
-  // Дети всегда видимы — чтобы можно было кликнуть на луну
-  // без предварительного выбора родителя. Визуальная «загромождённость»
-  // на низких зумах не проблема: луны рендерятся как 1.5 px точки
-  // внутри/рядом с планетой, а зум-фильтрация (ORBIT_MIN_PX в updateVisibility)
-  // прячет слишком маленькие орбиты.
-  this.childrenLayer.visible = true;
-  for (const child of this.children) child.updateSelection(_selectedName);
-}
+    // Дети всегда видимы — чтобы можно было кликнуть на луну
+    // без предварительного выбора родителя.
+    this.childrenLayer.visible = true;
+    for (const child of this.children) child.updateSelection(_selectedName);
+  }
 
   updateVisibility(zoom: number) {
     if (this.parent) {
       const parentLayerVisible = this.parent.childrenLayer.visible;
       this.sprite.visible = parentLayerVisible;
+      this.surface.graphics.visible = parentLayerVisible;
 
       if (this.orbitRecord && this.orbit) {
         const orbitPx = (this.orbit.a / KM_PER_UNIT) * zoom;

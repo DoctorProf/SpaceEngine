@@ -137,16 +137,35 @@ export function GameCanvas() {
       };
 
       const unsubscribe = useGameStore.subscribe((state) => {
-        const req = state.focusRequest;
-        if (req) {
-          useGameStore.setState({ focusRequest: null });
-          const pos = solarSystem.getBodyWorldPos(req.name);
-          if (pos) {
-            useGameStore.getState().focusBody(req.name);
-            camera.followOn(req.name, pos, req.zoom);
-          }
+      const req = state.focusRequest;
+
+      if (req) {
+        useGameStore.setState({ focusRequest: null });
+
+        const pos = solarSystem.getBodyWorldPos(req.name);
+        const body = solarSystem.getBody(req.name);
+
+        if (pos && body) {
+          useGameStore.getState().focusBody(req.name);
+
+          // Радиус тела переводим из километров в единицы мира.
+          const radiusUnits = body.data.radiusKm / KM_PER_UNIT;
+
+          // Точка фокуса смещена к нижней поверхности тела.
+          const surfaceOffset = {
+            x: 0,
+            y: -radiusUnits,
+          };
+
+          camera.followOn(
+            req.name,
+            pos,
+            req.zoom,
+            surfaceOffset,
+          );
         }
-      });
+      }
+    });
 
       app.canvas.addEventListener("mousedown", onDown);
       app.canvas.addEventListener("mouseup", onUp);
