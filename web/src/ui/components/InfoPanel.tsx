@@ -34,21 +34,16 @@ function fmtPeriod(sec: number): string {
 
 export function InfoPanel() {
   const info = useGameStore((s) => s.selectedInfo);
-  const setTransferTarget = useGameStore((s) => s.setTransferTarget);
-  const transferTarget = useGameStore((s) => s.transferTarget);
 
   if (!info) {
     return (
       <div style={panelStyle}>
         <div style={{ color: "#556", fontSize: 12 }}>
-          Кликните на планету или дважды — чтобы приблизиться
+          Кликните на планету, чтобы изучить
         </div>
       </div>
     );
   }
-
-  const canTransfer =
-    info.parentName === "Sun" && info.name !== "Earth";
 
   return (
     <div style={panelStyle}>
@@ -59,7 +54,12 @@ export function InfoPanel() {
       <Row label="Радиус" value={`${fmtNum(info.radiusKm)} км`} />
       <Row label="Масса" value={fmtMass(info.massKg)} />
       {info.parentName && <Row label="Родитель" value={info.parentName} />}
-      {info.soiRadiusKm && <Row label="SOI" value={fmtDistance(info.soiRadiusKm)} />}
+      {info.soiRadiusKm && (
+        <Row
+          label={info.parentName === null ? "SOI (до звезды)" : "SOI"}
+          value={fmtDistance(info.soiRadiusKm)}
+        />
+      )}
 
       {info.aKm !== undefined && (
         <>
@@ -71,35 +71,26 @@ export function InfoPanel() {
           <Row label="Период" value={fmtPeriod(info.periodSeconds!)} />
           <div style={divider} />
           <Row label="Сейчас до родителя" value={fmtDistance(info.currentDistanceKm!)} />
-          <Row label="Скорость" value={`${info.currentSpeedKmS!.toFixed(3)} км/с`} highlight />
+          <Row
+            label="Скорость"
+            value={`${info.currentSpeedKmS!.toFixed(3)} км/с`}
+            highlight
+          />
         </>
-      )}
-
-      {canTransfer && (
-        <button
-          onClick={() =>
-            setTransferTarget(transferTarget === info.name ? null : info.name)
-          }
-          style={{
-            marginTop: 10,
-            width: "100%",
-            padding: "6px",
-            background: transferTarget === info.name ? "#ffaa33" : "#1a1a2e",
-            color: transferTarget === info.name ? "#000" : "#ffaa33",
-            border: "1px solid #ffaa33",
-            fontFamily: "monospace",
-            fontSize: 12,
-            cursor: "pointer",
-          }}
-        >
-          {transferTarget === info.name ? "Скрыть траекторию" : "Перелёт с Земли"}
-        </button>
       )}
     </div>
   );
 }
 
-function Row({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function Row({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
       <span style={{ color: "#667" }}>{label}</span>
@@ -110,9 +101,9 @@ function Row({ label, value, highlight }: { label: string; value: string; highli
 
 const panelStyle: React.CSSProperties = {
   position: "absolute",
-  top: 52,                     // ← было 16, теперь под TopBar (36 + 16)
+  top: 52,
   right: 16,
-  width: 340,
+  width: 320,
   padding: "12px 16px",
   background: "rgba(10, 10, 30, 0.85)",
   border: "1px solid #2a3a5c",

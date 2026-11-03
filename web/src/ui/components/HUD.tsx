@@ -27,7 +27,7 @@ export function HUD() {
       <div
         style={{
           position: "absolute",
-          top: 52,                   // ← было 16
+          top: 52,                   
           left: 16,
           color: "#9ab",
           fontFamily: "monospace",

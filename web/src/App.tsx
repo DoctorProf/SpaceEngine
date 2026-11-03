@@ -5,6 +5,7 @@ import { InfoPanel } from "./ui/components/InfoPanel";
 import { TransferPanel } from "./ui/components/TransferPanel";
 import { TopBar } from "./ui/components/TopBar";
 import { PlanetList } from "./ui/components/PlanetList";
+import { HoverTooltip } from "./ui/components/HoverTooltip";
 import { MissionsScreen } from "./ui/screens/MissionsScreen";
 import { useGameStore } from "./state/gameStore";
 
@@ -29,6 +30,7 @@ export default function App() {
           <InfoPanel />
           <TransferPanel />
           <TimeControls />
+          <HoverTooltip />
         </>
       )}
       {activeTab === "missions" && <MissionsScreen />}

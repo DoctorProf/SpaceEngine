@@ -16,7 +16,19 @@ export interface BodyInfo {
   soiRadiusKm?: number;
 }
 
+export interface HoverInfo {
+  name: string;
+  screenX: number;
+  screenY: number;
+  radiusKm: number;
+  parentName: string | null;
+  distanceKm?: number;
+  color: number;
+  distToSelectedKm?: number; // <--- ДОБАВЛЕНО
+}
+
 type Tab = "sim" | "missions";
+type ViewMode = "space" | "surface";
 
 interface FocusRequest {
   name: string;
@@ -32,11 +44,12 @@ interface GameState {
   selectedInfo: BodyInfo | null;
   transferTarget: string | null;
   showSOI: boolean;
+  hovered: HoverInfo | null;
+  viewMode: ViewMode;
 
   activeTab: Tab;
   missions: Mission[];
   missionsProgress: Record<string, boolean>;
-
   focusRequest: FocusRequest | null;
 
   togglePause: () => void;
@@ -49,6 +62,8 @@ interface GameState {
   focusBody: (name: string) => void;
   requestFocus: (name: string, zoom: number) => void;
   clearFocusRequest: () => void;
+  setHovered: (info: HoverInfo | null) => void;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 function markProgress(
@@ -77,6 +92,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   selectedInfo: null,
   transferTarget: null,
   showSOI: false,
+  hovered: null,
+  viewMode: "space",
 
   activeTab: "sim",
   missions: MISSIONS,
@@ -88,6 +105,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   setTransferTarget: (name) => set({ transferTarget: name }),
   toggleSOI: () => set((s) => ({ showSOI: !s.showSOI })),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setHovered: (info) => set({ hovered: info }),
+  setViewMode: (mode) => set({ viewMode: mode }),
 
   selectBody: (name) => {
     const { missions, missionsProgress } = get();

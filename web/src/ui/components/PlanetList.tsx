@@ -1,63 +1,6 @@
 import { useGameStore } from "../../state/gameStore";
 import { SOLAR_SYSTEM, type BodyData } from "../../game/data/bodies";
-import { KM_PER_UNIT } from "../../game/physics/Scales";
-import { VIRTUAL_HEIGHT } from "../../game/render/PixelApp";
-
-const ZOOM_LEVELS = [
-  1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2,
-  1, 2, 4, 8, 16, 32, 64, 128,
-  256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
-];
-
-function nearestZoom(rawZoom: number): number {
-  let best = ZOOM_LEVELS[0];
-  let bestDelta = Infinity;
-  for (const z of ZOOM_LEVELS) {
-    const d = Math.abs(Math.log(z) - Math.log(rawZoom));
-    if (d < bestDelta) { bestDelta = d; best = z; }
-  }
-  return best;
-}
-
-/**
- * Зум для фокуса на тело:
- * - для планет с лунами — чтобы орбита дальней луны влезла (видна система)
- * - для планет без лун и спутников — чтобы диск занимал ~25% высоты экрана
- */
-function focusZoomFor(name: string): number {
-  const body = findBody(name);
-  if (!body) return 16;
-
-  const hasChildren = (body.children?.length ?? 0) > 0;
-  if (hasChildren) {
-    // диаметр системы = 2 × максимальная орбита среди детей
-    let maxA = 0;
-    for (const c of body.children!) {
-      if (c.orbit && c.orbit.aKm > maxA) maxA = c.orbit.aKm;
-    }
-    if (maxA > 0) {
-      const systemRadiusUnits = (maxA * 1.3) / KM_PER_UNIT;
-      const desiredPx = (VIRTUAL_HEIGHT * 0.45) / 2;  // половина высоты 45%
-      return nearestZoom(desiredPx / systemRadiusUnits);
-    }
-  }
-
-  const radiusUnits = body.radiusKm / KM_PER_UNIT;
-  const desiredPx = (VIRTUAL_HEIGHT * 0.25) / 2;
-  return nearestZoom(desiredPx / radiusUnits);
-}
-
-function findBody(name: string): BodyData | null {
-  function search(node: BodyData): BodyData | null {
-    if (node.name === name) return node;
-    for (const c of node.children ?? []) {
-      const r = search(c);
-      if (r) return r;
-    }
-    return null;
-  }
-  return search(SOLAR_SYSTEM);
-}
+import { focusZoomFor, findBodyByName } from "../../game/focus";
 
 interface Item {
   name: string;
@@ -67,13 +10,13 @@ interface Item {
 
 function flattenBodies(): Item[] {
   const items: Item[] = [];
-  function walk(node: BodyData, depth: number, skipRoot = false) {
-    if (!skipRoot) items.push({ name: node.name, depth, color: node.color });
+  function walk(node: BodyData, depth: number) {
+    items.push({ name: node.name, depth, color: node.color });
     for (const c of node.children ?? []) {
-      walk(c, depth + (skipRoot ? 0 : 1));
+      walk(c, depth + 1);
     }
   }
-  walk(SOLAR_SYSTEM, 0, true);
+  walk(SOLAR_SYSTEM, 0);
   return items;
 }
 
@@ -132,8 +75,8 @@ export function PlanetList() {
 
 const panelStyle: React.CSSProperties = {
   position: "absolute",
-  top: 210,                    // ← было 52, теперь ниже HUD
-  bottom: 80,                  // ← вместо maxHeight — до TimeControls
+  top: 210,
+  bottom: 80,
   left: 16,
   width: 160,
   overflowY: "auto",

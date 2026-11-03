@@ -136,7 +136,6 @@ export class Body {
       parent.children.push(this);
     }
 
-    // Стартовая инициализация размера
     this.updateSizeForZoom(1);
     for (const child of data.children ?? []) {
       new Body(child, textures, this);
@@ -205,12 +204,15 @@ export class Body {
     return false;
   }
 
-  updateSelection(selectedName: string | null) {
-    const showChildren =
-      this.parent === undefined || this.hasInSubtree(selectedName);
-    this.childrenLayer.visible = showChildren;
-    for (const child of this.children) child.updateSelection(selectedName);
-  }
+  updateSelection(_selectedName: string | null) {
+  // Дети всегда видимы — чтобы можно было кликнуть на луну
+  // без предварительного выбора родителя. Визуальная «загромождённость»
+  // на низких зумах не проблема: луны рендерятся как 1.5 px точки
+  // внутри/рядом с планетой, а зум-фильтрация (ORBIT_MIN_PX в updateVisibility)
+  // прячет слишком маленькие орбиты.
+  this.childrenLayer.visible = true;
+  for (const child of this.children) child.updateSelection(_selectedName);
+}
 
   updateVisibility(zoom: number) {
     if (this.parent) {
@@ -259,13 +261,21 @@ export class Body {
   }
 
   getInfo(simTime: number): BodyInfo {
+    const soiOverride = this.data.soiRadiusKm;
+
     const info: BodyInfo = {
       name: this.data.name,
       radiusKm: this.data.radiusKm,
       massKg: this.data.massKg,
       parentName: this.parent?.data.name ?? null,
-      soiRadiusKm: this.soiRadiusKm > 0 ? this.soiRadiusKm : undefined,
+      soiRadiusKm:
+        soiOverride !== undefined
+          ? soiOverride
+          : this.soiRadiusKm > 0
+            ? this.soiRadiusKm
+            : undefined,
     };
+
     if (this.orbit && this.parent) {
       const p = positionAt(this.orbit, simTime);
       const r = Math.sqrt(p.x * p.x + p.y * p.y);
@@ -277,6 +287,7 @@ export class Body {
       info.currentDistanceKm = r;
       info.currentSpeedKmS = speedAt(this.orbit, r);
     }
+
     return info;
   }
 

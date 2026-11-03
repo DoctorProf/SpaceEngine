@@ -4,14 +4,13 @@ export interface BodyData {
   massKg: number;
   color: number;
   parentMu?: number;
+  soiRadiusKm?: number;
   orbit?: {
     aKm: number;
     e: number;
-    // Вариант A — эфемериды J2000 (планеты):
     meanLongitudeDeg?: number;
     periLongitudeDeg?: number;
     periodDays?: number;
-    // Вариант B — прямые углы (спутники, искусственные):
     omega?: number;
     M0?: number;
   };
@@ -22,12 +21,14 @@ export const SUN_MU = 1.32712440018e11;
 export const EARTH_MU = 3.986004418e5;
 export const MARS_MU = 4.282837e4;
 export const JUPITER_MU = 1.26686534e8;
+export const SATURN_MU = 3.7931187e7;
 
 export const SOLAR_SYSTEM: BodyData = {
   name: "Sun",
   radiusKm: 696_000,
   massKg: 1.989e30,
   color: 0xffcc33,
+  soiRadiusKm: 1.9e13,
   children: [
     {
       name: "Mercury",
@@ -156,6 +157,56 @@ export const SOLAR_SYSTEM: BodyData = {
         aKm: 1.434e9, e: 0.0565,
         meanLongitudeDeg: 49.94432, periLongitudeDeg: 92.59888, periodDays: 10759.22,
       },
+      children: [
+        {
+          name: "Mimas",
+          radiusKm: 198.2,
+          massKg: 3.75e19,
+          color: 0x808080,
+          parentMu: SATURN_MU,
+          orbit: { aKm: 185_539, e: 0.0196, omega: 0.5, M0: 0 },
+        },
+        {
+          name: "Enceladus",
+          radiusKm: 252.1,
+          massKg: 1.08e20,
+          color: 0xf0f0f0,
+          parentMu: SATURN_MU,
+          orbit: { aKm: 237_948, e: 0.0047, omega: 1.5, M0: 1.2 },
+        },
+        {
+          name: "Tethys",
+          radiusKm: 531.1,
+          massKg: 6.17e20,
+          color: 0xc8d8e0,
+          parentMu: SATURN_MU,
+          orbit: { aKm: 294_619, e: 0.0001, omega: 2.5, M0: 2.8 },
+        },
+        {
+          name: "Dione",
+          radiusKm: 561.4,
+          massKg: 1.095e21,
+          color: 0x8a8a8a,
+          parentMu: SATURN_MU,
+          orbit: { aKm: 377_396, e: 0.0022, omega: 3.5, M0: 4.1 },
+        },
+        {
+          name: "Rhea",
+          radiusKm: 763.8,
+          massKg: 2.306e21,
+          color: 0x9a8a7a,
+          parentMu: SATURN_MU,
+          orbit: { aKm: 527_108, e: 0.0013, omega: 4.5, M0: 5.3 },
+        },
+        {
+          name: "Titan",
+          radiusKm: 2574.7,
+          massKg: 1.3452e23,
+          color: 0xd4a05a,
+          parentMu: SATURN_MU,
+          orbit: { aKm: 1_221_870, e: 0.0288, omega: 5.5, M0: 0.7 },
+        },
+      ],
     },
     {
       name: "Uranus",
